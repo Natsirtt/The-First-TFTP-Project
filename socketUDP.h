@@ -1,10 +1,3 @@
-/* 
- * File:   socketUDP.h
- * Author: Tristan LOUET
- *
- * Created on 19 mars 2013, 11:50
- */
-
 #ifndef SOCKETUDP_H
 #define	SOCKETUDP_H
 
@@ -56,10 +49,11 @@
     /**
      * Reads data on the socket from the remote adress:port host. Puts the data
      * in buff at most length bytes.
-     * Returns the size of 
+     * Returns the size of read data or -1 if there's an error.
      */
     int readFromSocketUDP(SocketUDP *socket, char *buffer, int length,
-                          char *address, int *port, int timeout);
+                          char *address, int *port, int timeout, 
+                          int *endTime);
     
     /**
      * Free the socket.
