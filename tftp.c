@@ -116,10 +116,12 @@ int sendAndWait(tftp_packet *send, tftp_packet *wait,
     return -1;
   }
   if (send->opCode != RRQ && send->opCode != WRQ) {
-    if (strcmp(addr, address) != 0 ) {
-      return -2;
-    }
-    if (port != senderPort) {
+    if ((strcmp(addr, address) != 0) || port != senderPort) {
+      tftp_error errPac;
+      char *msg = "Unexpected address and port";
+      createERR(&errPac, 5, strlen(msg), msg);
+      toNetwork((tftp_packet *) &errPac, buff, PACKET_LEN);
+      writeToSocketUDP(s, addr, senderPort, buff, PACKET_LEN);
       return -2;
     }
   }
@@ -127,15 +129,23 @@ int sendAndWait(tftp_packet *send, tftp_packet *wait,
   return 0;
 }
 
-int sendError(tftp_error *error, SocketUDP *s, const char *address, int port) {
-  char netPacket[PACKET_LEN];
-  if (toNetwork((tftp_packet *) error, netPacket, PACKET_LEN) == -1) {
-    return -1;
+int sendLoop(tftp_packet* toSend, tftp_packet* toReceive,
+            int timeout, SocketUDP* s, const char* address,
+            int port) {
+  int res = -1;
+  for (int i = 0; (i < SEND_LOOP_NB) && (res != 0); i++) {
+    int endTime;
+    res = sendAndWait(toSend, toReceive, timeout, s, address, port, &endTime);
+    //Si res == 0, on sortira de la boucle, ce sera terminé.
+    //Si res == -1, la boucle recommencera pour le prochain essai
+    //Si res == -2, on relance cet essai en diminuant le timeout
+    while (res == -2) {
+      printf("TFTP: res == -2 / retrying with timeout=%d", endTime);
+      int newTimeout = endTime;
+      res = sendAndWait(toSend, toReceive, newTimeout, s, address, port, &endTime);
+    }
   }
-  if (writeToSocketUDP(s, address, port, netPacket, PACKET_LEN) == -1) {
-    return -1;
-  }
-  return 0;
+  return res;
 }
 
 int toNetwork(tftp_packet *packet, char *buffer, int len) {
@@ -223,4 +233,27 @@ int fromNetwork(tftp_packet *packet, int packetLength, char *buffer, int len) {
   }
 
   return 0;
+}
+
+int readPacket(tftp_packet *packet, SocketUDP *socket,
+                char *address, int *port) {
+  char buff[PACKET_LEN];
+  int sizeRead = readFromSocketUDP(socket, buff, PACKET_LEN, address, port, -1, NULL);
+  if (sizeRead == -1) {
+    return -1;
+  }
+  //Construction du paquet
+  if (fromNetwork(packet, sizeRead, buff, PACKET_LEN) == -1) {
+    return -1;
+  }
+  return sizeRead;
+}
+
+int writePacket(tftp_packet *packet, SocketUDP *socket,
+                  const char *address, int port) {
+  char buff[PACKET_LEN];
+  if (toNetwork(packet, buff, PACKET_LEN) == -1) {
+    return -1;
+  }
+  return writeToSocketUDP(socket, address, port, buff, PACKET_LEN);
 }

@@ -26,12 +26,16 @@ SocketUDP *creerSocketUDP() {
 
 SocketUDP *creerSocketUDPattachee(const char *address, int port) {
   SocketUDP *sock = creerSocketUDP();
-  
+
   struct sockaddr_in in;
   if (initSockAddrUDP(address, port, &in) == -1) {
+    fprintf(stderr, "socketUDP: creerSocketUDPattachee -> iniSockAddrUDP a retourné -1\n");
     return NULL;
   }
   if (bind(sock->socket, (struct sockaddr *) &in, sizeof (struct sockaddr_in)) == -1) {
+    fprintf(stderr, "socketUDP: creerSocketUDPattachee -> bind a retourné -1\n");
+    perror("Message ");
+    fprintf(stderr, "\n");
     return NULL;
   }
   fillIdUDP(sock);
@@ -74,10 +78,10 @@ int getLocalPort(SocketUDP *socket) {
 }
 
 int writeToSocketUDP(SocketUDP *socket, const char *address, int port,
-                      const char *buffer, int length) {
+        const char *buffer, int length) {
   struct sockaddr_in in;
   initSockAddrUDP(address, port, &in);
-  int res = sendto(socket->socket, buffer, length, 0, (struct sockaddr *) &in, sizeof(struct sockaddr_in));
+  int res = sendto(socket->socket, buffer, length, 0, (struct sockaddr *) &in, sizeof (struct sockaddr_in));
   if (socket->local.port == -1) {
     fillIdUDP(socket);
   }
@@ -85,42 +89,41 @@ int writeToSocketUDP(SocketUDP *socket, const char *address, int port,
 }
 
 int readFromSocketUDP(SocketUDP *socket, char *buffer, int length,
-                        char *address, int *port, int timeout, int *endTime) {  
+        char *address, int *port, int timeout, int *endTime) {
   //Timeout avec option sur la socket
-  int privTimeout = 0;
   if (timeout > 0) {
-    privTimeout = timeout;
+    struct timeval tval;
+    memset(&tval, 0, sizeof (struct timeval));
+    tval.tv_sec = timeout;
+    setsockopt(socket->socket, SOL_SOCKET, SO_RCVTIMEO, &tval,
+            sizeof (struct timeval));
   }
-  struct timeval tval;
-  memset(&tval, 0, sizeof(struct timeval));
-  tval.tv_sec = privTimeout;
-  setsockopt(socket->socket, SOL_SOCKET, SO_RCVTIMEO, &tval,
-            sizeof(struct timeval));
-  
   //Lecture sur la socket
   struct sockaddr_in in;
-  socklen_t len = sizeof(struct sockaddr_in);
+  socklen_t len = sizeof (struct sockaddr_in);
   struct timeval startTime;
-  gettimeofday(&startTime, NULL);
-  ssize_t res = recvfrom(socket->socket, buffer, length, 0, (struct sockaddr *) &in, &len);  
+  if (timeout > 0) {
+    gettimeofday(&startTime, NULL);
+  }
+  ssize_t res = recvfrom(socket->socket, buffer, length, 0, (struct sockaddr *) &in, &len);
   if (res == -1) {
-    if (errno == ETIMEDOUT) {
+    if ((timeout > 0) && (errno == ETIMEDOUT)) {
       struct timeval endtval;
       gettimeofday(&endtval, NULL);
       *endTime = endtval.tv_sec - startTime.tv_sec;
-      return res;
     }
+    return res;
   }
   //Remplissage des infos
   *port = ntohs(in.sin_port);
-  
+
   char buff[SHORT_BUFFER_LEN];
-  if (getnameinfo((struct sockaddr *) &in, sizeof(struct sockaddr_in), buff, SHORT_BUFFER_LEN - 1, NULL, 0, NI_DGRAM) != 0) {
+  if (getnameinfo((struct sockaddr *) &in, sizeof (struct sockaddr_in), buff, SHORT_BUFFER_LEN - 1, NULL, 0, NI_DGRAM) != 0) {
     return res;
   }
   strncpy(address, buff, SHORT_BUFFER_LEN - 1);
   address[strlen(buff)] = 0;
-  
+
   return res;
 }
 

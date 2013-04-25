@@ -7,10 +7,25 @@
 /**
  * Les types de paquet pour le protocole tftp
  */
+/**
+ * Paquet de requête de lecture.
+ */
 #define RRQ 0
+/**
+ * Paquet de requête d'écriture.
+ */
 #define WRQ 1
+/**
+ * Paquet de données.
+ */
 #define DATA 2
+/**
+ * Paquet d'accusation de réception.
+ */
 #define ACK 3
+/**
+ * Paquet d'erreur.
+ */
 #define ERROR 4
 
 /**
@@ -29,6 +44,9 @@
 #define RWR_MODE 16
 #define DATA_LEN 512
 #define PACKET_LEN 516
+
+//Le nombre d'essais pour sendLoop
+#define SEND_LOOP_NB 10
 
 #define SHORT_BUFF_LEN 256
 
@@ -102,9 +120,14 @@ int sendAndWait(tftp_packet *send, tftp_packet *wait,
 		const char *address, int port, int *endTime);
 
 /**
- * Envoie un paquet d'erreur par la socket s.
+ * Envoie 10 fois un paquet et attend un paquet en retour.
+ * Si l'opération échoue dix fois (timeout dépassé ou échec),
+ * la fonction renvoie -1. Sinon, elle renvoie 0 et le paquet
+ * toReceive contient le paquet de réponse.
  */
-int sendError(tftp_error *error, SocketUDP *s, const char *address, int port);
+int sendLoop(tftp_packet *toSend, tftp_packet *toReceive,
+              int timeout, SocketUDP *s,
+              const char *address, int port);
 
 /**
  * Convertie le paquet packet en chaine à écrire sur
@@ -116,5 +139,18 @@ int toNetwork(tftp_packet *packet, char *buffer, int len);
  * Convertie une chaine du réseau en un paquet.
  */
 int fromNetwork(tftp_packet *packet, int packetLength, char *buffer, int len);
+
+/**
+ * Simple lecture d'un paquet sur la socket sans timeout.
+ * Retourne -1 en cas d'erreur, la taille du paquet lu sinon.
+ */
+int readPacket(tftp_packet* packet, SocketUDP* socket,
+                char* address, int *port);
+
+/**
+ * Simple écriture d'un paquet sur la socket sans timeout.
+ */
+int writePacket(tftp_packet* packet, SocketUDP* socket,
+                 const char* address, int port);
 
 #endif	/* TFTP_H */

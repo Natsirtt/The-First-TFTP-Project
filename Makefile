@@ -1,6 +1,11 @@
 CFLAGS=-Wall -pedantic -std=c99 -D_XOPEN_SOURCE
+LIBS=-lpthread
 
-all: socketUDP.o tftp.o
+all: server
+
+server: server.o socketUDP.o socketUDP_utils.o tftp.o
+
+server.o: server.c socketUDP.h tftp.h commons.h
 
 socketUDP.o : socketUDP.c socketUDP.h socketUDP_utils.h
 
