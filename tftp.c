@@ -31,7 +31,7 @@ int createRWRQ(tftp_rwrq *packet, int code,
   if (packet == NULL) {
     return -1;
   }
-  int netCode = htonl(code);
+  int netCode = htons(code);
   packet->opCode = netCode;
   memset(packet->data, 0, RWR_DATA);
   memset(packet->mode, 0, RWR_MODE);
@@ -47,8 +47,8 @@ int createDATA(tftp_data *packet, int nb, int datalen, char *data) {
   if (packet == NULL) {
     return -1;
   }
-  packet->opCode = htonl(DATA);
-  packet->blockNb = htonl(nb);
+  packet->opCode = htons(DATA);
+  packet->blockNb = htons(nb);
   packet->datalen = datalen;
   memset(packet->data, 0, datalen);
   strncpy(packet->data, data, datalen);
@@ -60,14 +60,14 @@ int createACK(tftp_ack *packet, int nb) {
   if (packet == NULL) {
     return -1;
   }
-  packet->opCode = htonl(ACK);
-  packet->blockNb = htonl(nb);
+  packet->opCode = htons(ACK);
+  packet->blockNb = htons(nb);
 
   return 0;
 }
 
 int createERR(tftp_error *packet, int errCode, 
-	      int messlen, char *message) {
+	      int messlen, const char *message) {
   if (messlen > DATA_LEN - 1) {
     return -1;
   }
@@ -75,8 +75,8 @@ int createERR(tftp_error *packet, int errCode,
     return -1;
   }
   memset(packet->errMsg, 0, DATA_LEN);
-  packet->opCode = htonl(ERROR);
-  packet->errorCode = htonl(errCode);
+  packet->opCode = htons(ERROR);
+  packet->errorCode = htons(errCode);
   strncpy(packet->errMsg, message, messlen);
 
   return 0;
@@ -152,7 +152,9 @@ int toNetwork(tftp_packet *packet, char *buffer, int len) {
   if (packet == NULL || buffer == NULL || len < PACKET_LEN) {
     return -1;
   }
-  switch (packet->opCode) {
+//  printf("opCode = %d\n", packet->opCode);
+//  switch (packet->opCode) {
+  switch (ntohs(packet->opCode)) {
   case RRQ:
   case WRQ: {
     tftp_rwrq *pac = (tftp_rwrq *) packet;
@@ -181,6 +183,7 @@ int toNetwork(tftp_packet *packet, char *buffer, int len) {
     tftp_error *pac = (tftp_error *) packet;
     memset(buffer, 0, PACKET_LEN);
     memcpy(buffer, &(pac->opCode), 2);
+    printf("pac->opCode = %hd - &(pac->opCode) = %hd - buffer: <%s>\n", pac->opCode, &(pac->opCode), buffer);
     memcpy(buffer + 2, &(pac->errorCode), 2);
     memcpy(buffer + 4, pac->errMsg, DATA_LEN);
     break;
@@ -208,6 +211,8 @@ int fromNetwork(tftp_packet *packet, int packetLength, char *buffer, int len) {
     tftp_rwrq *pac = (tftp_rwrq *) packet;
     memcpy(pac->data, buffer + 2, RWR_DATA);
     memcpy(&(pac->mode), buffer + 2 + RWR_DATA, RWR_MODE);
+    //"Déréseautisation"
+    pac->opCode = ntohs(pac->opCode);
     break;
   }
   case DATA: {
@@ -215,17 +220,26 @@ int fromNetwork(tftp_packet *packet, int packetLength, char *buffer, int len) {
     memcpy(&(pac->blockNb), buffer + 2, 2);
     pac->datalen = packetLength - 4;
     memcpy(pac->data, buffer + 4, pac->datalen);
+    //"Déréseautisation"
+    pac->opCode = ntohs(pac->opCode);
+    pac->blockNb = ntohs(pac->blockNb);
     break;
   }
   case ACK: {
     tftp_ack *pac = (tftp_ack *) packet;
     memcpy(&(pac->blockNb), buffer + 2, 2);
+    //"Déréseautisation"
+    pac->opCode = ntohs(pac->opCode);
+    pac->blockNb = ntohs(pac->blockNb);
     break;
   }
   case ERROR: {
     tftp_error *pac = (tftp_error *) packet;
     memcpy(&(pac->errorCode), buffer + 2, 2);
     memcpy(pac->errMsg, buffer + 4, DATA_LEN);
+    //"Déréseautisation"
+    pac->opCode = ntohs(pac->opCode);
+    pac->errorCode = ntohs(pac->errorCode);
   }
   default :
     return -1;
@@ -255,5 +269,6 @@ int writePacket(tftp_packet *packet, SocketUDP *socket,
   if (toNetwork(packet, buff, PACKET_LEN) == -1) {
     return -1;
   }
+  printf("Conversion vers buffer réseau OK - buffer = <%s>\n", buff);
   return writeToSocketUDP(socket, address, port, buff, PACKET_LEN);
 }

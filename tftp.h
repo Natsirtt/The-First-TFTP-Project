@@ -104,7 +104,7 @@ int createACK(tftp_ack *packet, int nb);
  * Rend un paquet ERR correctement initialisé.
  */
 int createERR(tftp_error *packet, int errCode, 
-	      int messlen, char *message);
+	      int messlen, const char *message);
 
 
 /*

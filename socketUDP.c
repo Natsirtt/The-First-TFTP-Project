@@ -81,7 +81,9 @@ int writeToSocketUDP(SocketUDP *socket, const char *address, int port,
         const char *buffer, int length) {
   struct sockaddr_in in;
   initSockAddrUDP(address, port, &in);
+  printf("Envoi dans la socket...\n");
   int res = sendto(socket->socket, buffer, length, 0, (struct sockaddr *) &in, sizeof (struct sockaddr_in));
+  printf("OK\n");
   if (socket->local.port == -1) {
     fillIdUDP(socket);
   }

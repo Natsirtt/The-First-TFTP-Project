@@ -1,9 +1,16 @@
+CC=gcc
 CFLAGS=-Wall -pedantic -std=c99 -D_XOPEN_SOURCE
 LIBS=-lpthread
 
-all: server
+all: server client
+
+client: client.o socketUDP.o socketUDP_utils.o tftp.o
+	$(CC) -o $@ $^ $(LIBS)
 
 server: server.o socketUDP.o socketUDP_utils.o tftp.o
+	$(CC) -o $@ $^ $(LIBS)
+
+client.o: client.c socketUDP.h tftp.h commons.h
 
 server.o: server.c socketUDP.h tftp.h commons.h
 
