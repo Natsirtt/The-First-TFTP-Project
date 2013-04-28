@@ -152,7 +152,6 @@ int toNetwork(tftp_packet *packet, char *buffer, int len) {
   if (packet == NULL || buffer == NULL || len < PACKET_LEN) {
     return -1;
   }
-//  printf("opCode = %d\n", packet->opCode);
 //  switch (packet->opCode) {
   switch (ntohs(packet->opCode)) {
   case RRQ:
@@ -180,12 +179,8 @@ int toNetwork(tftp_packet *packet, char *buffer, int len) {
     break;
   }
   case ERROR: {
-    tftp_error *pac = (tftp_error *) packet;
-    memset(buffer, 0, PACKET_LEN);
-    memcpy(buffer, &(pac->opCode), 2);
-    printf("pac->opCode = %hd - &(pac->opCode) = %hd - buffer: <%s>\n", pac->opCode, &(pac->opCode), buffer);
-    memcpy(buffer + 2, &(pac->errorCode), 2);
-    memcpy(buffer + 4, pac->errMsg, DATA_LEN);
+    memcpy(buffer, packet, PACKET_LEN);
+    printf("buffer = <%s>\n", buffer);
     break;
   }
   default :
