@@ -3,12 +3,15 @@
 #include <pthread.h>
 #include <netinet/in.h>
 #include <string.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <unistd.h>
 
 #include "socketUDP.h"
 #include "commons.h"
 #include "tftp.h"
 
-#define SHORT_BUFFER_LEN 256
+#define SERVER_PATH "files/"
 
 int lostNumber = 0;
 
@@ -24,13 +27,15 @@ void sendError(SocketUDP *socket, const char *address, int port, int errCode, co
     fprintf(stderr, "La création d'un paquet d'erreur à échoué\n");
   } else {
     printf("Ecriture d'une erreur sur la socket\n");
-    writePacket((tftp_packet *) &errPac, socket, address, port);
-    printf("\tdone.\n");
+    writePacket((tftp_packet *) & errPac, socket, address, port);
+    printf("done.\n");
   }
 }
 
-void *thread_readingRequestRoutine(void *threadArg);
-void *thread_writingRequestRoutine(void *threadArg);
+void *thread_readingRequestRoutineOctet(void *threadArg);
+void *thread_writingRequestRoutineOctet(void *threadArg);
+void *thread_readingRequestRoutineNetascii(void* threadArg);
+void *thread_writingRequestRoutineNetascii(void* threadArg);
 
 int main(int argc, char** argv) {
   //La socket du serveur
@@ -48,7 +53,7 @@ int main(int argc, char** argv) {
     char address[SHORT_BUFF_LEN];
     int port;
     if (readPacket(&packet, bindedSocket, address, &port) == -1) {
-      printf("Echec de lecture d'un paquet");
+      printf("Echec de lecture d'un paquet\n");
       lostNumber++;
     } else {
       printf("Paquet de requete recu, tests sur le paquet en cours\n");
@@ -70,12 +75,25 @@ int main(int argc, char** argv) {
           remoteID.port = port;
           threadArgument_t arg;
           arg.remote = remoteID;
-          strncpy(arg.filename, reqPacket->data, SHORT_BUFFER_LEN);
+          strncpy(arg.filename, SERVER_PATH, strlen(SERVER_PATH));
+          strncat(arg.filename, reqPacket->data, SHORT_BUFFER_LEN);
           strncpy(arg.mode, reqPacket->mode, SHORT_BUFFER_LEN);
-          if (reqPacket->opCode == RRQ) {
-            pthread_create(&thread, NULL, thread_readingRequestRoutine, &arg);
+          //Options de thread pour faire un thread détaché
+          pthread_attr_t thread_attr;
+          pthread_attr_init(&thread_attr);
+          pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
+          if (strcmp(reqPacket->mode, "octet") == 0) {
+            if (reqPacket->opCode == RRQ) {
+              pthread_create(&thread, &thread_attr, thread_readingRequestRoutineOctet, &arg);
+            } else {
+              pthread_create(&thread, &thread_attr, thread_writingRequestRoutineOctet, &arg);
+            }
           } else {
-            pthread_create(&thread, NULL, thread_writingRequestRoutine, &arg);
+            if (reqPacket->opCode == RRQ) {
+              pthread_create(&thread, &thread_attr, thread_readingRequestRoutineNetascii, &arg);
+            } else {
+              pthread_create(&thread, &thread_attr, thread_readingRequestRoutineNetascii, &arg);
+            }
           }
         }
       }
@@ -83,17 +101,93 @@ int main(int argc, char** argv) {
   }
 }
 
-void *thread_readingRequestRoutine(void* threadArg) {
+void *thread_readingRequestRoutineOctet(void* threadArg) {
   threadArgument_t *arg = (threadArgument_t *) threadArg;
-  printf("Paquet de requête de lecture reçu depuis %s:%d\n", arg->remote.ip, arg->remote.port);
-  printf("Nom du fichier : %s - mode : %s\n", arg->filename, arg->mode);
+  //Création d'une socket spécifique à cette connexion
+  SocketUDP *serviceSocket = creerSocketUDP();
+  int end = 0;
+  
+  int fd = open(arg->filename, O_RDONLY);
+  if (fd == -1) {
+    if (errno == ENOENT) {
+      char errMsg[1024];
+      fprintf(stderr, "Le fichier %s est introuvable\n", arg->filename);
+      snprintf(errMsg, 1024, "Le fichier %s n'a pas été trouvé sur le serveur",
+                              arg->filename);
+      sendError(serviceSocket, arg->remote.ip, arg->remote.port, FNF_ERR, errMsg);
+    } else {
+      sendError(serviceSocket, arg->remote.ip, arg->remote.port, UKNW_ERR,
+                              "Erreur lors de l'ouverture du fichier");
+    }
+    end = 1;
+  }
+
+  //Lecture du fichier et 
+  int dataBlocNb = 1;
+  while (end != 1) {
+    tftp_data data;
+    char buff[DATA_LEN];
+    
+    int readNb;
+    if ((readNb = read(fd, buff, DATA_LEN)) == -1) {
+      sendError(serviceSocket, arg->remote.ip, arg->remote.port, UKNW_ERR,
+                "Erreur interne du serveur (lecture échouée)");
+      end = 1;
+      continue;
+    }
+    
+    end = (readNb < DATA_LEN);
+    
+    if (createDATA(&data, dataBlocNb, readNb, buff) == -1) {
+      sendError(serviceSocket, arg->remote.ip, arg->remote.port, UKNW_ERR,
+                "Erreur interne du serveur (création du paquet échouée)");
+      end = 1;
+      continue;
+    }
+    
+    printf("buff = <%s> et data = <%s>\n", buff, data.data);
+    tftp_packet packet;
+    int res = sendLoop((tftp_packet *) &data, &packet, TIMEOUT,
+              serviceSocket, arg->remote.ip, arg->remote.port);
+    if (res <= 0) {
+      sendError(serviceSocket, arg->remote.ip, arg->remote.port,
+                UKNW_ERR, "Tout les essais d'envoi du paquet sont un échec");
+    }
+    
+    //Si on est ici, on a un ACK correspondant au bon blockNb (controlé par sendLoop)
+    //ou bien une erreur.
+    dataBlocNb++;
+    if (packet.opCode == ERROR) {
+      fprintf(stderr, "Le client termine la connexion par une erreur\n");
+      end = 1;
+      continue;
+    }    
+  }
+  close(fd);
+  return NULL;
+}
+
+void *thread_writingRequestRoutineOctet(void* threadArg) {
+  //  threadArgument_t *arg = (threadArgument_t *) threadArg;
+  //Création d'une socket spécifique à cette connexion
+  //  SocketUDP *serviceSocket = creerSocketUDP();
 
   return NULL;
 }
 
-void *thread_writingRequestRoutine(void* threadArg) {
-  threadArgument_t *arg = (threadArgument_t *) threadArg;
+void *thread_readingRequestRoutineNetascii(void* threadArg) {
+  //  threadArgument_t *arg = (threadArgument_t *) threadArg;
+  //Création d'une socket spécifique à cette connexion
+  //  SocketUDP *serviceSocket = creerSocketUDP();
 
+
+  return NULL;
+}
+
+void *thread_writingRequestRoutineNetascii(void* threadArg) {
+  //  threadArgument_t *arg = (threadArgument_t *) threadArg;
+  //Création d'une socket spécifique à cette connexion
+  //  SocketUDP *serviceSocket = creerSocketUDP();
 
   return NULL;
 }

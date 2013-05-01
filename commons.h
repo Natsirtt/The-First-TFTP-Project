@@ -2,7 +2,8 @@
 #define	COMMONS_H
 
 #define TFTP_SERVER_PORT 65500
-#define TFTP_CLIENT_PORT 65000
+
+#define SHORT_BUFFER_LEN 256
 
 #endif	/* COMMONS_H */
 

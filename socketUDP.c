@@ -108,24 +108,28 @@ int readFromSocketUDP(SocketUDP *socket, char *buffer, int length,
     gettimeofday(&startTime, NULL);
   }
   ssize_t res = recvfrom(socket->socket, buffer, length, 0, (struct sockaddr *) &in, &len);
-  if (res == -1) {
-    if ((timeout > 0) && (errno == ETIMEDOUT)) {
+  if (timeout > 0) {
       struct timeval endtval;
       gettimeofday(&endtval, NULL);
-      *endTime = endtval.tv_sec - startTime.tv_sec;
-    }
-    return res;
+      *endTime = timeout - (endtval.tv_sec - startTime.tv_sec);
+  }
+  if (res == -1) {
+    return -1;
   }
   //Remplissage des infos
-  *port = ntohs(in.sin_port);
-
-  char buff[SHORT_BUFFER_LEN];
-  if (getnameinfo((struct sockaddr *) &in, sizeof (struct sockaddr_in), buff, SHORT_BUFFER_LEN - 1, NULL, 0, NI_DGRAM) != 0) {
-    return res;
+  if (port != NULL) {
+    *port = ntohs(in.sin_port);
   }
-  strncpy(address, buff, SHORT_BUFFER_LEN - 1);
-  address[strlen(buff)] = 0;
 
+  if (address != NULL) {
+    char buff[SHORT_BUFFER_LEN];
+    if (getnameinfo((struct sockaddr *) &in, sizeof (struct sockaddr_in), buff, SHORT_BUFFER_LEN - 1, NULL, 0, NI_DGRAM) != 0) {
+      return res;
+    }
+    strncpy(address, buff, SHORT_BUFFER_LEN - 1);
+    address[strlen(buff)] = 0;
+  }
+  
   return res;
 }
 
